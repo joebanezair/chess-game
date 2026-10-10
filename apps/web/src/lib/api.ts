@@ -1,8 +1,8 @@
 // Use same-origin reverse proxy in development, even if an older .env.local
 // still contains the legacy localhost:4000 value. This works in Codespaces,
-// dev containers and remote browsers without exposing the backend port.
-const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\\/$/, '');
-const legacyLocalUrl = /^http:\/\/(?:localhost|127\.0\.0\.1):4000$/i.test(configuredApiUrl ?? '');
+const apiUrlSetting = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
+const configuredApiUrl = apiUrlSetting.endsWith('/') ? apiUrlSetting.slice(0, -1) : apiUrlSetting;
+const legacyLocalUrl = configuredApiUrl === 'http://localhost:4000' || configuredApiUrl === 'http://127.0.0.1:4000';
 export const API_URL = !configuredApiUrl || legacyLocalUrl ? '/api' : configuredApiUrl;
 export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || (API_URL === '/api' ? '' : API_URL);
 
