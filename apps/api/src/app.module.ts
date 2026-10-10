@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AdminController, AdminRoleGuard } from './admin/admin.controller';
+import { AdminService } from './admin/admin.service';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
@@ -15,7 +17,7 @@ import { RedisService } from './redis.service';
     signOptions: { expiresIn: '7d', issuer: 'crown-checkers' },
     verifyOptions: { issuer: 'crown-checkers' },
   })],
-  controllers: [AuthController, GamesController],
-  providers: [AuthService, AuthGuard, GameGateway, GamesService, PrismaService, RedisService],
+  controllers: [AuthController, GamesController, AdminController],
+  providers: [AuthService, AuthGuard, AdminRoleGuard, AdminService, GameGateway, GamesService, PrismaService, RedisService],
 })
 export class AppModule {}

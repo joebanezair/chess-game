@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import {
   ArrowLeft, ArrowRight, Check, ChevronRight, CircleHelp, Copy, Crown,
-  Flag, Gamepad2, LoaderCircle, LogOut, Radio, ShieldCheck, Swords, Trophy, Users, Zap,
+  Flag, Gamepad2, LoaderCircle, LogOut, Settings, Radio, ShieldCheck, Swords, Trophy, Users, Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -90,6 +90,7 @@ function LoginPanel({ onAuth }: { onAuth: (user: User) => void }) {
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
+  const [apiUnavailable, setApiUnavailable] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameId, setGameId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -114,7 +115,9 @@ export default function HomePage() {
     setGameId(activeIdRef.current);
     const onPop = () => navigate(new URLSearchParams(window.location.search).get('game'), false);
     window.addEventListener('popstate', onPop);
-    api<{ user: User }>('/auth/me').then((response) => setUser(response.user)).catch(() => {}).finally(() => setChecking(false));
+    api<{ user: User }>('/auth/me').then((response) => setUser(response.user)).catch((err: Error) => {
+      if (err.message.startsWith('Cannot reach')) setApiUnavailable(true);
+    }).finally(() => setChecking(false));
     return () => window.removeEventListener('popstate', onPop);
   }, [navigate]);
 
@@ -132,6 +135,11 @@ export default function HomePage() {
       if (activeIdRef.current === state.id) setGame(state);
     });
     conn.on('game:error', (payload: { message: string }) => { setNotice(payload.message); });
+    conn.on('account:disabled', () => {
+      setUser(null); setQueued(false); setGame(null);
+      setNotice('Your account has been disabled. Please contact an administrator.');
+      conn.disconnect();
+    });
     conn.on('connect_error', () => setNotice('Unable to connect to live matches. Is the game server running?'));
     const pulse = window.setInterval(() => { if (conn.connected) conn.emit('presence:ping'); }, 20000);
     return () => { window.clearInterval(pulse); conn.disconnect(); setSocket(null); };
@@ -219,13 +227,20 @@ export default function HomePage() {
         {user ? <div className="flex items-center gap-3">
           <span className="hidden text-sm text-muted sm:block">Signed in as <b className="text-cream">{user.username}</b></span>
           <span className="grid size-9 place-items-center rounded-full border border-gold/40 bg-gold/10 text-sm font-bold uppercase text-gold sm:hidden">{user.username[0]}</span>
+          {user.role === 'ADMIN' && <a href="/admin" className="inline-flex h-9 items-center gap-2 rounded-lg border border-gold/30 bg-gold/10 px-3 text-xs font-semibold text-gold hover:bg-gold/20"><Settings size={15}/> Admin</a>}
           <Button size="sm" variant="ghost" onClick={() => void signOut()} aria-label="Sign out"><LogOut size={16}/><span className="hidden sm:inline">Sign out</span></Button>
         </div> : <span className="flex items-center gap-2 text-xs text-muted"><span className="size-2 animate-pulse rounded-full bg-emerald-400"/> FREE TO PLAY</span>}
       </div>
     </header>
     <main className="mx-auto max-w-7xl px-4 pb-20 pt-8 sm:px-6 lg:px-8">
       {checking ? <div className="flex min-h-[60vh] items-center justify-center gap-3 text-muted"><LoaderCircle className="animate-spin text-gold" /> Loading the club...</div>
-      : !user ? <LoginPanel onAuth={(next) => { setUser(next); setNotice(''); }}/>
+      : !user ? <>
+          {apiUnavailable && <div role="alert" className="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/40 p-4 text-sm text-amber-200">
+            Backend unavailable. Start Docker and run <code>npm run dev -w @crown/api</code> in another terminal, then refresh.
+          </div>}
+          {notice && <div role="alert" className="mb-4 rounded-xl border border-red-800/50 bg-red-950/30 p-4 text-sm text-red-300">{notice}</div>}
+          <LoginPanel onAuth={(next) => { setUser(next); setNotice(''); setApiUnavailable(false); }}/>
+        </>
       : <>
         {notice && <div role="alert" className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-200"><span>{notice}</span><button className="text-xl leading-none" aria-label="Dismiss alert" onClick={() => setNotice('')}>&times;</button></div>}
         {gameId ? <>

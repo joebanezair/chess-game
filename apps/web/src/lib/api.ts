@@ -1,6 +1,6 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
-export type User = { id: string; username: string; email: string };
+export type User = { id: string; username: string; email: string; role: 'ADMIN' | 'USER' };
 export type Piece = 'r' | 'R' | 'b' | 'B' | null;
 export type LegalMove = { from: number; to: number; captures: number[] };
 export type Game = {
@@ -29,12 +29,17 @@ export type GameListItem = {
 };
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(API_URL + path, {
-    ...init,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
-    cache: 'no-store',
-  });
+  let response: Response;
+  try {
+    response = await fetch(API_URL + path, {
+      ...init,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+      cache: 'no-store',
+    });
+  } catch {
+    throw new Error('Cannot reach the game API on ' + API_URL + '. Check Docker and start the backend with npm run dev -w @crown/api.');
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = typeof body.message === 'string' ? body.message : 'Request failed. Please try again.';

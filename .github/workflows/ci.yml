@@ -1,7 +1,7 @@
 name: Build and test
 on:
   push:
-    branches: [main, feat/multiplayer-checkers]
+    branches: [main, feat/admin-account-management]
   pull_request:
 jobs:
   verify:

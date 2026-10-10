@@ -7,6 +7,7 @@ A polished, **real-time two-player checkers web app** built with Next.js, TypeSc
 ## Features
 
 - Register with a username, email, and password; sign in/out with secure HTTP-only session cookies.
+- Admin-only user management: search accounts, disable/re-enable players, disconnect disabled sessions, and record audit entries.
 - Queue for an automatically matched live opponent.
 - Create a private challenge, share a link, and let another registered player accept.
 - Play on a responsive board with highlighted legal moves, forced jumps, multi-captures, and king promotion.
@@ -134,6 +135,44 @@ npm test       # Checkers rules tests
 npm run build  # Build the API and frontend
 ```
 
+## Administrator setup and account disabling
+
+Regular registration creates only **USER** accounts. There is **no public admin-registration endpoint** or default administrator password.
+
+1. Start the database and apply migrations with `docker compose up -d --wait`, `npm run db:generate`, and `npm run db:migrate`.
+2. Register your own user in the browser at `http://localhost:3000`.
+3. From the **server terminal** (where you have database access), promote that user using:
+
+   ```bash
+   npm run admin:promote -- your_username_or_email
+   ```
+
+4. Sign out and sign in again to refresh the role shown in the interface.
+5. Click **Admin** in the header or open `http://localhost:3000/admin`.
+
+In the admin panel, search by username/email and choose **Disable** or **Enable** for a regular account. Disabling an account blocks login and authenticated API access, invalidates existing authentication tokens, removes the user from matchmaking, and disconnects their live sockets. Re-enabling does not restore their previous sessions: they must sign in again. All status changes are recorded in `AdminAction` with the administrator identity, action, optional reason, and timestamp.
+
+**Safety:** Admins cannot disable their own accounts or other administrators from this panel. Only trusted server/database operators can grant ADMIN roles using the CLI above. Keep database credentials secret, never expose the promotion command to end users, and review the audit log when investigating abuse. Disabled users' game and user records remain stored for audit/history; they are not deleted.
+
+## If the API is refusing connections on port 4000
+
+A `net::ERR_CONNECTION_REFUSED` error for `http://localhost:4000/auth/me` or `/auth/register` means the **NestJS backend is not running**. The React DevTools console message is unrelated.
+
+In separate terminals from the repository root:
+
+```bash
+# First terminal: start required services and initialize the database
+docker compose up -d --wait
+npm run db:generate
+npm run db:migrate
+npm run dev -w @crown/api
+
+# Second terminal: start Next.js (while the first stays open)
+npm run dev -w @crown/web
+```
+
+Open `http://localhost:4000/health` and verify it returns `{"ok":true}`. If it does not, check the backend terminal's exact startup error, and confirm `apps/api/.env` exists and `JWT_SECRET` is at least 32 characters.
+
 ## Project structure
 
 ```text
@@ -163,6 +202,8 @@ Authenticated REST endpoints:
 - `GET /games` — recent games; `POST /games` — invite room
 - `GET /games/:id` — snapshot; `POST /games/:id/join` — accept invite
 - `POST /games/:id/resign` — resign
+- `GET /admin/users?search=&page=1` — ADMIN-only paginated user search
+- `PATCH /admin/users/:id/status` — ADMIN-only disable/re-enable (JSON: `{ "disabled": true, "reason": "optional" }`)
 
 Socket.IO client messages: `presence:ping`, `queue:join`, `queue:leave`, `game:join`, `game:move`.
 
