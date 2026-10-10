@@ -204,7 +204,7 @@ export default function HomePage() {
 
   const playing = Boolean(game && game.meColor && game.status === 'ACTIVE');
   const yourTurn = Boolean(playing && game?.meColor === game?.turn);
-  const winnerName = game?.winnerId === game?.red.id ? game.red.username : game?.winnerId === game?.black?.id ? game.black.username : null;
+  const winnerName = game && game.winnerId ? (game.winnerId === game.red.id ? game.red.username : game.winnerId === game.black?.id ? game.black.username : null) : null;
   const reds = game?.board.filter((p) => p === 'r' || p === 'R').length ?? 0;
   const blacks = game?.board.filter((p) => p === 'b' || p === 'B').length ?? 0;
 
