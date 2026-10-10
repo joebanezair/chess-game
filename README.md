@@ -15,27 +15,124 @@ A polished, **real-time two-player checkers web app** built with Next.js, TypeSc
 - Built-in throttling on authentication endpoints; polished dark UI with Next.js + Tailwind + shadcn-compatible button/card primitives.
 - Tests for the rules engine and GitHub Actions build/test workflow.
 
-## Local setup (free software; no hosted services required)
+## How to run locally
 
-Install **Node.js 22+**, npm, and Docker Desktop (or Docker Engine and Compose).
+Everything needed to develop and run the game locally uses free software. You do **not** need a paid hosting account.
+
+### 1. Install the prerequisites
+
+- **Node.js 22 or newer** (includes npm) — [nodejs.org](https://nodejs.org/)
+- **Docker Desktop** (Windows/macOS) or Docker Engine with Compose (Linux) — [docker.com](https://www.docker.com/products/docker-desktop/)
+- **Git** — [git-scm.com](https://git-scm.com/)
+
+Make sure Docker Desktop is **running** before starting the database.
+
+### 2. Download the project
+
+Open a terminal (PowerShell on Windows, or Terminal on macOS/Linux):
 
 ```bash
 git clone https://github.com/joebanezair/chess-game.git
 cd chess-game
 npm install
+```
+
+If you've already cloned the repository, update it with `git pull origin main` instead of cloning again.
+
+### 3. Create your environment files
+
+**Windows — PowerShell:**
+
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
+Copy-Item apps/web/.env.example apps/web/.env.local
+```
+
+**macOS / Linux / Git Bash:**
+
+```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
-docker compose up -d
+```
+
+The example files contain the correct **local** database, Redis, frontend, and API URLs. Open `apps/api/.env` and replace `JWT_SECRET` with your own long, random secret. To generate one:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
+```
+
+Copy the generated value after `JWT_SECRET=` in `apps/api/.env`. **Never commit** `.env` or `.env.local` files.
+
+### 4. Start PostgreSQL and Redis
+
+From the project's root folder:
+
+```bash
+docker compose up -d --wait
+```
+
+This starts the local database on port **5432** and Redis on port **6379**. Initial Docker image downloads need internet access.
+
+### 5. Initialize the database
+
+```bash
 npm run db:generate
 npm run db:migrate
+```
+
+You need to do this for the first setup, and again after pulling code with new database migrations.
+
+### 6. Start the game
+
+```bash
 npm run dev
 ```
 
-For Windows PowerShell, replace the two `cp` commands with `Copy-Item`.
+Leave that terminal open. It runs the frontend and the multiplayer API together.
 
-Open **http://localhost:3000** in two different browsers or private windows. Register two separate accounts. Choose **Find a match** in each browser, or create a room on one account and use its shared link on the other. The API runs on **http://localhost:4000**, and `GET /health` provides a simple health endpoint.
+| Service | Local URL |
+| --- | --- |
+| **Play the game (Next.js frontend)** | **http://localhost:3000** |
+| Multiplayer API (NestJS) | http://localhost:4000 |
+| API health check | http://localhost:4000/health |
 
-**Important:** Change `JWT_SECRET` before publishing any server. Never commit your `.env` files. PostgreSQL and Redis are provided locally by Docker Compose, not free cloud infrastructure.
+Open **http://localhost:3000** in your browser, register an account, and start playing.
+
+### 7. Test multiplayer with two accounts
+
+1. Open the game in **two separate browsers** (or one normal window and one incognito/private window).
+2. Register a **different account** in each browser.
+3. For **automatic matchmaking**, click **Find a match** in both accounts. The game starts when they pair.
+4. For a **private match**, click **Create a room** in the first account, copy its invitation link, then open it in the second account and click **Accept challenge**.
+5. Play moves on the board; both players should see updates in real time.
+
+Both players can use the same computer for testing. To connect another device, you'll need to configure reachable frontend/API addresses instead of `localhost`.
+
+### Stop and restart
+
+- Press **Ctrl+C** in the terminal running `npm run dev` to stop the application.
+- To stop the database and Redis containers without deleting saved games: `docker compose down`
+- To start the containers again: `docker compose up -d --wait`, then `npm run dev`.
+- **Do not use `docker compose down -v` unless you intend to delete the local PostgreSQL and Redis data.**
+
+### Troubleshooting
+
+| Issue | What to check |
+| --- | --- |
+| `docker` command not found / cannot connect | Install and start Docker Desktop; verify `docker compose version`. |
+| Database connection error | Run `docker compose ps` and check that PostgreSQL is healthy; verify `DATABASE_URL` in `apps/api/.env`. |
+| Redis connection error / matchmaking unavailable | Verify Redis is running with `docker compose ps` and check `REDIS_URL`. |
+| `JWT_SECRET` error | Generate a secret of at least 32 characters and set it in `apps/api/.env`. |
+| Ports 3000, 4000, 5432, or 6379 are busy | Stop the conflicting program or change the relevant port configuration. |
+| Changes to environment variables are not reflected | Stop and restart `npm run dev`. |
+| Game loads but live moves do not update | Ensure the API is running and `NEXT_PUBLIC_API_URL` in `apps/web/.env.local` points to it. |
+
+### Run checks
+
+```bash
+npm test       # Checkers rules tests
+npm run build  # Build the API and frontend
+```
 
 ## Project structure
 
