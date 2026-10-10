@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, TooManyRequestsException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 import { RedisService } from '../redis.service';
@@ -22,7 +22,7 @@ export class AuthService {
   async throttle(key: string, limit: number, seconds: number) {
     const count = await this.redis.client.incr(key);
     if (count === 1) await this.redis.client.expire(key, seconds);
-    if (count > limit) throw new TooManyRequestsException('Too many attempts. Please try again later.');
+    if (count > limit) throw new HttpException('Too many attempts. Please try again later.', HttpStatus.TOO_MANY_REQUESTS);
   }
 
   async register(input: unknown) {
