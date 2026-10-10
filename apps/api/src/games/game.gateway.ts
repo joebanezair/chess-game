@@ -1,5 +1,3 @@
-import { Logger } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { ConnectedSocket, MessageBody, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import * as cookie from 'cookie';
@@ -7,20 +5,24 @@ import { AuthService } from '../auth/auth.service';
 import { GamesService } from './games.service';
 import { RedisService } from '../redis.service';
 
-type GameSocket = Socket & { data: { userId?: string } };
+type GameSocket = Socket & { data: { userId?: string; sessionToken?: string } };
 
 @WebSocketGateway({
   transports: ['websocket'],
   cors: { origin: process.env.WEB_ORIGIN || 'http://localhost:3000', credentials: true },
 })
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  private logger = new Logger(GameGateway.name);
   @WebSocketServer() server!: Server;
   constructor(private auth: AuthService, private games: GamesService, private redis: RedisService) {}
 
-  private user(socket: GameSocket): string {
-    if (!socket.data.userId) throw new Error('Not authenticated');
-    return socket.data.userId;
+  private async user(socket: GameSocket): Promise<string> {
+    const id = socket.data.userId;
+    if (!id || !(await this.auth.verifySession(socket.data.sessionToken))) {
+      socket.emit('account:disabled', { message: 'Your session is no longer valid or your account is disabled.' });
+      socket.disconnect(true);
+      throw new Error('Your session is no longer valid or your account is disabled.');
+    }
+    return id;
   }
   private error(socket: GameSocket, error: unknown) {
     const message = error instanceof Error ? error.message : 'Something went wrong';
@@ -32,6 +34,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = await this.auth.verifySession(session);
     if (!userId || !(await this.auth.me(userId))) { socket.disconnect(true); return; }
     socket.data.userId = userId;
+    socket.data.sessionToken = session;
     socket.join('user:' + userId);
     await this.redis.client.set('online:' + userId, '1', 'EX', 60);
   }
@@ -41,14 +44,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('presence:ping')
   async ping(@ConnectedSocket() socket: GameSocket) {
-    try { await this.redis.client.set('online:' + this.user(socket), '1', 'EX', 60); }
+    try { await this.redis.client.set('online:' + await this.user(socket), '1', 'EX', 60); }
     catch (error) { this.error(socket, error); }
   }
 
   @SubscribeMessage('queue:join')
   async joinQueue(@ConnectedSocket() socket: GameSocket) {
     try {
-      const me = this.user(socket);
+      const me = await this.user(socket);
       const match = await this.redis.withLock('lock:matchmaking', async () => {
         const redis = this.redis.client;
         await redis.set('online:' + me, '1', 'EX', 60);
@@ -57,7 +60,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         for (const opponent of queued) {
           if (opponent === me) continue;
           const online = await redis.exists('online:' + opponent);
-          if (!online) { await redis.zrem('queue:checkers', opponent); continue; }
+          if (!online || !(await this.auth.activeUser(opponent))) {
+            await redis.zrem('queue:checkers', opponent); continue;
+          }
           const game = await this.games.startMatch(opponent, me);
           await redis.zrem('queue:checkers', opponent, me);
           return { gameId: game.id, opponent };
@@ -74,7 +79,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('queue:leave')
   async leaveQueue(@ConnectedSocket() socket: GameSocket) {
     try {
-      await this.redis.client.zrem('queue:checkers', this.user(socket));
+      await this.redis.client.zrem('queue:checkers', await this.user(socket));
       socket.emit('queue:left');
     } catch (error) { this.error(socket, error); }
   }
@@ -83,7 +88,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async joinGame(@ConnectedSocket() socket: GameSocket, @MessageBody() body: { gameId?: string }) {
     try {
       if (typeof body?.gameId !== 'string') throw new Error('Game ID required');
-      const snapshot = await this.games.snapshot(body.gameId, this.user(socket));
+      const snapshot = await this.games.snapshot(body.gameId, await this.user(socket));
       if (!snapshot.meColor) throw new Error('Join the challenge to play');
       await socket.join('game:' + body.gameId);
       socket.emit('game:state', snapshot);
@@ -96,9 +101,18 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (typeof body?.gameId !== 'string' || typeof body.from !== 'number' || typeof body.to !== 'number') {
         throw new Error('Invalid move data');
       }
-      await this.games.move(body.gameId, this.user(socket), body.from, body.to);
+      await this.games.move(body.gameId, await this.user(socket), body.from, body.to);
       await this.publishState(body.gameId);
     } catch (error) { this.error(socket, error); }
+  }
+
+  async disconnectAccount(userId: string) {
+    await this.redis.client.zrem('queue:checkers', userId);
+    await this.redis.client.del('online:' + userId);
+    this.server.in('user:' + userId).emit('account:disabled', {
+      message: 'Your account has been disabled by an administrator.',
+    });
+    this.server.in('user:' + userId).disconnectSockets(true);
   }
 
   async publishState(gameId: string) {

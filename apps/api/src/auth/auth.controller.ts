@@ -19,7 +19,7 @@ export class AuthController {
   async register(@Body() body: unknown, @Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     await this.auth.throttle('auth:register:' + request.ip, 5, 3600);
     const user = await this.auth.register(body);
-    reply.setCookie('crown_session', this.auth.issueSession(user.id), cookieOptions);
+    reply.setCookie('crown_session', this.auth.issueSession(user.id, user.sessionVersion), cookieOptions);
     return { user };
   }
 
@@ -27,7 +27,7 @@ export class AuthController {
   async login(@Body() body: unknown, @Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     await this.auth.throttle('auth:login:' + request.ip, 20, 600);
     const user = await this.auth.login(body);
-    reply.setCookie('crown_session', this.auth.issueSession(user.id), cookieOptions);
+    reply.setCookie('crown_session', this.auth.issueSession(user.id, user.sessionVersion), cookieOptions);
     return { user };
   }
 

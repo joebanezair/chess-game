@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { io } from 'socket.io-client';
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
 const base = 'http://localhost:4000';
 const suffix = Date.now().toString(36) + randomBytes(3).toString('hex');
@@ -19,7 +21,7 @@ const sockets = [];
 async function request(path, { method = 'GET', cookie, body } = {}) {
   const response = await fetch(base + path, {
     method,
-    headers: { ...(cookie ? { Cookie: cookie } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { Origin: 'http://localhost:3000', ...(cookie ? { Cookie: cookie } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const json = await response.json().catch(() => ({}));
@@ -107,7 +109,48 @@ try {
   const matchedGame = (await request('/games/' + pairing.gameId, { cookie: c.cookie })).body;
   assert.equal(matchedGame.status, 'ACTIVE');
   assert.equal(matchedGame.black.id, d.user.id);
-  console.log('PASS: registration, challenge acceptance, live WebSocket move, history, Redis matchmaking');
+  // Only server-side access can promote a registered player to administrator.
+  await prisma.user.update({ where: { id: a.user.id }, data: { role: 'ADMIN' } });
+  const aAdmin = (await request('/auth/me', { cookie: a.cookie })).body.user;
+  assert.equal(aAdmin.role, 'ADMIN');
+  const denied = await fetch(base + '/admin/users', { headers: { Cookie: c.cookie } });
+  assert.equal(denied.status, 403);
+  const listing = await request('/admin/users?search=' + encodeURIComponent(b.user.username), { cookie: a.cookie });
+  assert.equal(listing.body.users[0].id, b.user.id);
+  assert.ok(!JSON.stringify(listing.body).includes('passwordHash'));
+
+  const adminProtected = await fetch(base + '/admin/users/' + a.user.id + '/status', {
+    method: 'PATCH', headers: { Cookie: a.cookie, Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disabled: true }),
+  });
+  assert.equal(adminProtected.status, 403);
+
+  const socketDropped = event(bSocket, 'disconnect');
+  await request('/admin/users/' + b.user.id + '/status', {
+    method: 'PATCH', cookie: a.cookie, body: { disabled: true, reason: 'Smoke test' },
+  });
+  await socketDropped;
+  const revoked = await fetch(base + '/auth/me', { headers: { Cookie: b.cookie } });
+  assert.equal(revoked.status, 401);
+  const blockedLogin = await fetch(base + '/auth/login', {
+    method: 'POST', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier: b.user.username, password: 'CrownDemoPassword123!' }),
+  });
+  assert.equal(blockedLogin.status, 403);
+  await request('/admin/users/' + b.user.id + '/status', {
+    method: 'PATCH', cookie: a.cookie, body: { disabled: false },
+  });
+  // A re-enabled user must log in again, and old cookies remain revoked.
+  assert.equal((await fetch(base + '/auth/me', { headers: { Cookie: b.cookie } })).status, 401);
+  const relogin = await request('/auth/login', {
+    method: 'POST', body: { identifier: b.user.username, password: 'CrownDemoPassword123!' },
+  });
+  assert.equal(relogin.body.user.id, b.user.id);
+  const actions = await prisma.adminAction.findMany({ where: { targetId: b.user.id } });
+  assert.equal(actions.length, 2);
+  assert.ok(actions.some((entry) => entry.action === 'DISABLE' && entry.actorId === a.user.id));
+
+  console.log('PASS: auth, game sockets, matchmaking, admin authorization, account disabling, token revocation, audit log');
 } catch (error) {
   console.error(error);
   console.error('API output:', serverOutput);
@@ -115,4 +158,5 @@ try {
 } finally {
   for (const socket of sockets) socket.disconnect();
   backend.kill('SIGTERM');
+  await prisma.$disconnect();
 }

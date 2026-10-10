@@ -7,6 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AdminActionType {
+  DISABLE
+  ENABLE
+}
+
 enum GameStatus {
   WAITING
   ACTIVE
@@ -23,6 +33,11 @@ model User {
   username     String   @unique
   email        String   @unique
   passwordHash String
+  role         UserRole @default(USER)
+  disabledAt   DateTime?
+  sessionVersion Int @default(0)
+  actionsPerformed AdminAction[] @relation("AdminActor")
+  actionsReceived  AdminAction[] @relation("AdminTarget")
   createdAt    DateTime @default(now())
   redGames     Game[]   @relation("RedPlayer")
   blackGames   Game[]   @relation("BlackPlayer")
@@ -64,4 +79,18 @@ model Move {
 
   @@unique([gameId, ply])
   @@index([playerId])
+}
+
+model AdminAction {
+  id        String          @id @default(cuid())
+  actorId   String
+  targetId  String
+  actor     User            @relation("AdminActor", fields: [actorId], references: [id])
+  target    User            @relation("AdminTarget", fields: [targetId], references: [id])
+  action    AdminActionType
+  reason    String?
+  createdAt DateTime        @default(now())
+
+  @@index([createdAt])
+  @@index([targetId, createdAt])
 }

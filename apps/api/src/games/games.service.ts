@@ -18,6 +18,10 @@ export class GamesService {
 
   async startMatch(redId: string, blackId: string) {
     if (redId === blackId) throw new BadRequestException('You cannot play against yourself');
+    const count = await this.prisma.user.count({
+      where: { id: { in: [redId, blackId] }, disabledAt: null },
+    });
+    if (count !== 2) throw new ForbiddenException('A player is disabled.');
     return this.prisma.game.create({
       data: { redPlayerId: redId, blackPlayerId: blackId, status: 'ACTIVE', board: initialBoard() },
     });
@@ -26,6 +30,9 @@ export class GamesService {
   async joinInvite(gameId: string, userId: string) {
     const existing = await this.prisma.game.findUnique({ where: { id: gameId } });
     if (!existing) throw new NotFoundException('Game not found');
+    if (!(await this.prisma.user.findFirst({ where: { id: existing.redPlayerId, disabledAt: null } }))) {
+      throw new BadRequestException('The host account is disabled');
+    }
     if (existing.blackPlayerId === userId) return existing;
     if (existing.redPlayerId === userId) throw new BadRequestException('You cannot join your own challenge');
     const result = await this.prisma.game.updateMany({
@@ -71,6 +78,13 @@ export class GamesService {
     return this.prisma.$transaction(async (tx) => {
       const game = await tx.game.findUnique({ where: { id: gameId } });
       if (!game) throw new NotFoundException('Game not found');
+      const players = await tx.user.count({
+        where: {
+          id: { in: [game.redPlayerId, game.blackPlayerId!].filter(Boolean) },
+          disabledAt: null,
+        },
+      });
+      if (players !== 2) throw new ForbiddenException('This match contains a disabled account');
       if (game.status !== GameStatus.ACTIVE) throw new BadRequestException('This game is not active');
       const color: Color | null = game.redPlayerId === userId ? 'RED' : game.blackPlayerId === userId ? 'BLACK' : null;
       if (!color) throw new ForbiddenException('You are not a player in this game');
