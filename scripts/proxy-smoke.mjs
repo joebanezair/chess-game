@@ -6,6 +6,9 @@ import { io } from 'socket.io-client';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { PrismaClient } from '@prisma/client';
+import { hash } from 'bcryptjs';
+const prisma = new PrismaClient();
 
 // Verify the actual shared frontend API helper; the bug was caused by its
 // default JSON header, not by the NestJS game endpoints.
@@ -93,14 +96,23 @@ try {
   // Reproduce the two-friend flow via the same-origin proxy, including
   // three bodyless POSTs; users must be able to create, accept, and resign.
   const otherName = 'buddy' + randomBytes(4).toString('hex');
-  const registeredFriend = await fetch(base + '/api/auth/register', {
-    method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: otherName, email: otherName + '@example.com', password: 'SecurePassword123!',
-    }),
+  const friendPassword = 'SecurePassword123!';
+  // The previous integration script has already registered four users and
+  // the proxy test registered one more. Seed this sixth test fixture via DB
+  // rather than lowering or bypassing the API's security rate limit.
+  await prisma.user.create({
+    data: {
+      username: otherName,
+      email: otherName + '@example.com',
+      passwordHash: await hash(friendPassword, 12),
+    },
   });
-  assert.equal(registeredFriend.status, 201, await registeredFriend.clone().text());
-  const friendCookie = registeredFriend.headers.get('set-cookie')?.split(';')[0];
+  const friendLogin = await fetch(base + '/api/auth/login', {
+    method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier: otherName, password: friendPassword }),
+  });
+  assert.equal(friendLogin.status, 201, await friendLogin.clone().text());
+  const friendCookie = friendLogin.headers.get('set-cookie')?.split(';')[0];
   assert.ok(friendCookie, 'Friend must receive a session cookie');
 
   const makeRoom = await fetch(base + '/api/games', {
@@ -149,4 +161,5 @@ try {
   process.exitCode = 1;
 } finally {
   for(const proc of processes)proc.kill('SIGTERM');
+  await prisma.$disconnect();
 }
