@@ -43,9 +43,10 @@ async function connect(session) {
   const socket = io(base, { transports: ['websocket'], reconnection: false, extraHeaders: { Cookie: session.cookie } });
   sockets.push(socket);
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('WebSocket connect timed out')), 8000);
-    socket.once('connect', () => { clearTimeout(timer); resolve(); });
+    const timer = setTimeout(() => reject(new Error('WebSocket session-ready timed out')), 12000);
+    socket.once('session:ready', () => { clearTimeout(timer); resolve(); });
     socket.once('connect_error', (error) => { clearTimeout(timer); reject(error); });
+    socket.once('disconnect', (reason) => { clearTimeout(timer); reject(new Error('Disconnected before auth: ' + reason)); });
   });
   return socket;
 }

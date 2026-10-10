@@ -97,6 +97,7 @@ export default function HomePage() {
   const [game, setGame] = useState<Game | null>(null);
   const [recent, setRecent] = useState<GameListItem[]>([]);
   const [queued, setQueued] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState('');
@@ -126,6 +127,8 @@ export default function HomePage() {
     void refreshRecent();
     const conn = io(SOCKET_URL || undefined, { transports: ['websocket'], withCredentials: true, reconnection: true });
     setSocket(conn);
+    conn.on('session:ready', () => setSocketReady(true));
+    conn.on('disconnect', () => setSocketReady(false));
     conn.on('queue:waiting', () => setQueued(true));
     conn.on('queue:left', () => setQueued(false));
     conn.on('queue:matched', ({ gameId: id }: { gameId: string }) => {
@@ -142,7 +145,7 @@ export default function HomePage() {
     });
     conn.on('connect_error', () => setNotice('Unable to connect to live matches. Is the game server running?'));
     const pulse = window.setInterval(() => { if (conn.connected) conn.emit('presence:ping'); }, 20000);
-    return () => { window.clearInterval(pulse); conn.disconnect(); setSocket(null); };
+    return () => { window.clearInterval(pulse); conn.disconnect(); setSocket(null); setSocketReady(false); };
   }, [user?.id, navigate, refreshRecent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -184,7 +187,7 @@ export default function HomePage() {
     finally { setPending(false); }
   }
   function queueUp() {
-    if (!socket?.connected) { setNotice('Connecting to multiplayer server. Please try again shortly.'); return; }
+    if (!socket?.connected || !socketReady) { setNotice('Connecting to multiplayer server. Please try again shortly.'); return; }
     setQueued(true); setNotice(''); socket.emit('queue:join');
   }
   function cancelQueue() { socket?.emit('queue:leave'); setQueued(false); }

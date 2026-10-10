@@ -59,8 +59,8 @@ try {
   });
   try {
     await new Promise((resolve,reject) => {
-      const timer = setTimeout(() => reject(new Error('Same-origin WebSocket proxy timeout')), 12000);
-      socket.once('connect', () => { clearTimeout(timer); resolve(); });
+      const timer = setTimeout(() => reject(new Error('Same-origin WebSocket session-ready timeout')), 12000);
+      socket.once('session:ready', () => { clearTimeout(timer); resolve(); });
       socket.once('connect_error', (error) => { clearTimeout(timer); reject(error); });
     });
     console.log('PASS: same-origin /api/health, account registration, session cookie and Socket.IO proxy');

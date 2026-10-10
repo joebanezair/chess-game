@@ -37,6 +37,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     socket.data.sessionToken = session;
     socket.join('user:' + userId);
     await this.redis.client.set('online:' + userId, '1', 'EX', 60);
+    socket.emit('session:ready', { userId });
   }
   handleDisconnect(_socket: GameSocket) {
     // Presence expires automatically. Multiple tabs/devices may still be online.
