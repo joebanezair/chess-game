@@ -1,0 +1,21 @@
+{
+  "name": "crown-checkers",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm run dev -w @crown/api\" \"npm run dev -w @crown/web\"",
+    "build": "npm run db:generate && npm run build -w @crown/api && npm run build -w @crown/web",
+    "test": "npm run test -w @crown/api",
+    "db:generate": "npm run db:generate -w @crown/api",
+    "db:migrate": "npm run db:migrate -w @crown/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
