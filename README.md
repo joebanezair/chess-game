@@ -153,7 +153,7 @@ cd ../..
 npm run dev
 ```
 
-`prisma migrate reset --force` reapplies all migrations and runs configured seed scripts, if any. There is currently no configured seed script. Existing Redis matchmaking and presence data are **not** cleared by this option; if that causes stale matches, you can stop and restart the Redis container or use the complete reset below.
+`prisma migrate reset --force` reapplies all migrations and runs configured seed scripts, if any. There is currently no configured seed script. Existing Redis matchmaking and presence data are **not** cleared by this option. Restarting Redis also preserves its persisted data; use the complete reset below if you need to clear Redis too.
 
 ### Option B: Completely erase PostgreSQL **and Redis** volumes
 
