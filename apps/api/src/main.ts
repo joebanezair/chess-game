@@ -23,7 +23,7 @@ async function bootstrap() {
     throw new Error('Set JWT_SECRET to a securely generated secret of at least 32 characters');
   }
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: false }));
-  await app.register(fastifyCookie);
+  await app.register(fastifyCookie as any);
   app.enableCors({ origin: process.env.WEB_ORIGIN || 'http://localhost:3000', credentials: true });
   app.useGlobalFilters(new ValidationFilter());
   const adapter = new RedisIoAdapter(app);
