@@ -6,7 +6,10 @@ import { initialBoard, legalMoves, playMove, type Board, type Color } from '../g
 const participants = {
   redPlayer: { select: { id: true, username: true } },
   blackPlayer: { select: { id: true, username: true } },
+  coinReward: { select: { userId: true, amount: true } },
 } as const;
+
+export const COINS_PER_WIN = 20;
 
 @Injectable()
 export class GamesService {
@@ -61,6 +64,7 @@ export class GamesService {
       id: game.id, status: game.status, board: game.board as Board,
       turn: game.turn, forcedFrom: game.forcedFrom, winnerId: game.winnerId,
       red: game.redPlayer, black: game.blackPlayer, meColor: mine,
+      coinReward: game.coinReward,
       version: game.version, createdAt: game.createdAt,
       legalMoves: mine === game.turn && game.status === 'ACTIVE'
         ? legalMoves(game.board as Board, game.turn as Color, game.forcedFrom)
@@ -110,6 +114,21 @@ export class GamesService {
           from, to, captured: next.captures, promoted: next.promoted,
         },
       });
+      // Only a win decided by legal gameplay earns coins. Resignations, pending
+      // rooms and unfinished games do not mint rewards. The coin entry's
+      // unique gameId and this transaction prevent duplicate payouts.
+      if (next.winner) {
+        const winnerId = next.winner === 'RED' ? game.redPlayerId : game.blackPlayerId;
+        if (winnerId) {
+          await tx.coinEntry.create({
+            data: { gameId, userId: winnerId, amount: COINS_PER_WIN },
+          });
+          await tx.user.update({
+            where: { id: winnerId },
+            data: { coinBalance: { increment: COINS_PER_WIN } },
+          });
+        }
+      }
       return { id: gameId };
     });
   }

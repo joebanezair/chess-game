@@ -8,6 +8,7 @@ A polished, **real-time two-player checkers web app** built with Next.js, TypeSc
 
 - Register with a username, email, and password; sign in/out with secure HTTP-only session cookies.
 - Admin-only user management: search accounts, disable/re-enable players, disconnect disabled sessions, and record audit entries.
+- Earn 20 **non-redeemable virtual coins** for a match won through normal gameplay. No coins for resignations, unfinished games, or losses; balance and reward history are stored securely in PostgreSQL.
 - Queue for an automatically matched live opponent.
 - Create a private challenge, share a link, and let another registered player accept.
 - Play on a responsive board with highlighted legal moves, forced jumps, multi-captures, and king promotion.
@@ -180,6 +181,29 @@ npm run admin:promote -- your_username_or_email
 
 Sign out and back in to refresh your role, then open `/admin`. The reset deletes **all previous admin assignments**, so promotion must be repeated.
 
+## Virtual coins (free to play)
+
+Crown Coins are **virtual progress points only**: they cannot be purchased, transferred, wagered, redeemed, converted to money, or cashed out. New accounts start with **0 coins**.
+
+- Win a game by the normal checkers rules (eliminate or block the other player): **+20 coins**.
+- Lose, resign, win because the opponent resigned, or leave a match unfinished: **0 coins**.
+- Each naturally completed game can issue **at most one reward**, enforced by a database uniqueness constraint and an atomic transaction with the game result.
+- The lobby and game room show your balance; the lobby also shows your recent coin rewards.
+- Your own account's wallet is available from the authenticated `GET /coins` API. There is no client-side API for granting, spending, or transferring coins.
+- The migration creates coin balances and a persistent coin history without removing existing players or games. **Old finished games are not retroactively rewarded.**
+
+When pulling the feature, run:
+
+```bash
+git pull origin main
+npm install
+npm run db:generate
+npm run db:migrate
+npm run dev
+```
+
+**Do not run a database reset** to activate coins; the migration preserves your existing data. These rewards are for casual gameplay only, not financial wagering or prizes.
+
 ## Administrator setup and account disabling
 
 Regular registration creates only **USER** accounts. There is **no public admin-registration endpoint** or default administrator password.
@@ -277,6 +301,7 @@ Authenticated REST endpoints:
 - `GET /games` — recent games; `POST /games` — invite room
 - `GET /games/:id` — snapshot; `POST /games/:id/join` — accept invite
 - `POST /games/:id/resign` — resign
+- `GET /coins` — authenticated user's virtual coin balance and latest rewards
 - `GET /admin/users?search=&page=1` — ADMIN-only paginated user search
 - `PATCH /admin/users/:id/status` — ADMIN-only disable/re-enable (JSON: `{ "disabled": true, "reason": "optional" }`)
 

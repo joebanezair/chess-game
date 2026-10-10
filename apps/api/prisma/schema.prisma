@@ -36,12 +36,14 @@ model User {
   role         UserRole @default(USER)
   disabledAt   DateTime?
   sessionVersion Int @default(0)
+  coinBalance Int @default(0)
   actionsPerformed AdminAction[] @relation("AdminActor")
   actionsReceived  AdminAction[] @relation("AdminTarget")
   createdAt    DateTime @default(now())
   redGames     Game[]   @relation("RedPlayer")
   blackGames   Game[]   @relation("BlackPlayer")
   moves        Move[]
+  coinEntries  CoinEntry[]
 }
 
 model Game {
@@ -59,6 +61,7 @@ model Game {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   moves         Move[]
+  coinReward    CoinEntry?
 
   @@index([redPlayerId, createdAt])
   @@index([blackPlayerId, createdAt])
@@ -93,4 +96,16 @@ model AdminAction {
 
   @@index([createdAt])
   @@index([targetId, createdAt])
+}
+
+model CoinEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  gameId    String   @unique
+  amount    Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  game      Game     @relation(fields: [gameId], references: [id])
+
+  @@index([userId, createdAt])
 }

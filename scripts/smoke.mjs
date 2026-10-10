@@ -104,6 +104,50 @@ try {
   const history = (await request('/games', { cookie: b.cookie })).body;
   assert.equal(history[0].id, gameId);
 
+  // Coins are private to the signed-in user and default to zero.
+  const unauthCoins = await fetch(base + '/coins');
+  assert.equal(unauthCoins.status, 401);
+  assert.equal((await request('/coins', { cookie: a.cookie })).body.balance, 0);
+  assert.equal((await request('/coins', { cookie: b.cookie })).body.balance, 0);
+
+  // Arrange a legitimate last-capture victory by a RED piece. Only this
+  // server-validated game ending—not a client request—can mint 20 coins.
+  const victoryBoard = Array(64).fill(null);
+  victoryBoard[42] = 'r'; // RED on a dark square
+  victoryBoard[33] = 'b'; // final BLACK piece to be captured
+  const rewardGame = await prisma.game.create({
+    data: {
+      redPlayerId: a.user.id, blackPlayerId: b.user.id,
+      status: 'ACTIVE', turn: 'RED', board: victoryBoard,
+    },
+  });
+  const victoryEvent = event(bSocket, 'game:state', 12000);
+  aSocket.emit('game:move', { gameId: rewardGame.id, from: 42, to: 24 });
+  const victory = await victoryEvent;
+  assert.equal(victory.id, rewardGame.id);
+  assert.equal(victory.status, 'FINISHED');
+  assert.equal(victory.winnerId, a.user.id);
+  assert.deepEqual(victory.coinReward, { userId: a.user.id, amount: 20 });
+  const winWallet = (await request('/coins', { cookie: a.cookie })).body;
+  assert.equal(winWallet.balance, 20);
+  assert.equal(winWallet.history[0].gameId, rewardGame.id);
+  assert.equal(winWallet.history[0].amount, 20);
+  assert.equal((await request('/coins', { cookie: b.cookie })).body.balance, 0);
+  // A duplicate client move cannot create a second payout.
+  const repeatError = event(aSocket, 'game:error', 12000);
+  aSocket.emit('game:move', { gameId: rewardGame.id, from: 42, to: 24 });
+  await repeatError;
+  assert.equal((await request('/coins', { cookie: a.cookie })).body.balance, 20);
+  assert.equal(await prisma.coinEntry.count({ where: { gameId: rewardGame.id } }), 1);
+
+  // A resignation finishes the match but never creates spendable credits.
+  const resignedGame = await prisma.game.create({
+    data: { redPlayerId: a.user.id, blackPlayerId: b.user.id, status: 'ACTIVE', board: victoryBoard },
+  });
+  await request('/games/' + resignedGame.id + '/resign', { method: 'POST', cookie: b.cookie });
+  assert.equal((await request('/coins', { cookie: a.cookie })).body.balance, 20);
+  assert.equal(await prisma.coinEntry.count({ where: { gameId: resignedGame.id } }), 0);
+
   const c = await register('rc');
   const d = await register('rd');
   const cSocket = await connect(c);
@@ -159,7 +203,7 @@ try {
   assert.equal(actions.length, 2);
   assert.ok(actions.some((entry) => entry.action === 'DISABLE' && entry.actorId === a.user.id));
 
-  console.log('PASS: auth, game sockets, matchmaking, admin authorization, account disabling, token revocation, audit log');
+  console.log('PASS: auth, private matches, coin rewards and idempotency, admin authorization, disabled sessions, audit log');
 } catch (error) {
   console.error(error);
   console.error('API output:', serverOutput);
