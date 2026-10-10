@@ -44,8 +44,8 @@ try {
     headers: { Origin: base, 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: name, email: name + '@example.com', password: 'SecurePassword123!' }),
   });
-  assert.equal(response.status, 201, await response.text());
   const result = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(result));
   assert.equal(result.user.username, name);
   const cookie = response.headers.get('set-cookie')?.split(';')[0];
   assert.ok(cookie?.startsWith('crown_session='), 'Proxy should preserve session cookie');
