@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import {
   ArrowLeft, ArrowRight, Check, ChevronRight, CircleHelp, Copy, Crown,
-  Flag, Gamepad2, LoaderCircle, LogOut, Settings, Radio, ShieldCheck, Swords, Trophy, Users, Zap,
+  Flag, Gamepad2, LoaderCircle, LogOut, Settings, Radio, ShieldCheck, Swords, Trophy, Users, Zap, Coins,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { SOCKET_URL, api, type Game, type GameListItem, type User } from '@/lib/api';
+import { SOCKET_URL, api, type CoinWallet, type Game, type GameListItem, type User } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 function PlayerBadge({ name, color, active, label }: {
@@ -96,6 +96,7 @@ export default function HomePage() {
   const activeIdRef = useRef<string | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [recent, setRecent] = useState<GameListItem[]>([]);
+  const [wallet, setWallet] = useState<CoinWallet | null>(null);
   const [queued, setQueued] = useState(false);
   const [socketReady, setSocketReady] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -110,6 +111,14 @@ export default function HomePage() {
   const refreshRecent = useCallback(async () => {
     try { setRecent(await api<GameListItem[]>('/games')); } catch { /* session may have ended */ }
   }, []);
+  const refreshCoins = useCallback(async () => {
+    try { setWallet(await api<CoinWallet>('/coins')); } catch { /* preserve last known balance */ }
+  }, []);
+
+  useEffect(() => {
+    if (user) void refreshCoins();
+    else setWallet(null);
+  }, [user?.id, refreshCoins]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     activeIdRef.current = new URLSearchParams(window.location.search).get('game');
@@ -157,7 +166,13 @@ export default function HomePage() {
     return () => { ignore = true; };
   }, [gameId, user?.id]);
 
-  useEffect(() => { setSelected(null); if (game?.status === 'FINISHED') void refreshRecent(); }, [game?.version, game?.status, refreshRecent]);
+  useEffect(() => {
+    setSelected(null);
+    if (game?.status === 'FINISHED') {
+      void refreshRecent();
+      void refreshCoins();
+    }
+  }, [game?.version, game?.status, refreshRecent, refreshCoins]);
 
   async function makeChallenge() {
     setNotice(''); setPending(true);
@@ -210,7 +225,7 @@ export default function HomePage() {
   }
   async function signOut() {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});
-    setUser(null); setGame(null); setRecent([]); setQueued(false); navigate(null);
+    setUser(null); setGame(null); setRecent([]); setWallet(null); setQueued(false); navigate(null);
   }
 
   const playing = Boolean(game && game.meColor && game.status === 'ACTIVE');
@@ -229,6 +244,10 @@ export default function HomePage() {
         </button>
         {user ? <div className="flex items-center gap-3">
           <span className="hidden text-sm text-muted sm:block">Signed in as <b className="text-cream">{user.username}</b></span>
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold" title="Virtual coins earned from gameplay. No cash value" aria-label={`${wallet?.balance ?? 0} Crown Coins`}>
+            <Coins size={16} aria-hidden="true"/>
+            <span className="tabular-nums">{wallet?.balance ?? '–'}</span>
+          </div>
           <span className="grid size-9 place-items-center rounded-full border border-gold/40 bg-gold/10 text-sm font-bold uppercase text-gold sm:hidden">{user.username[0]}</span>
           {user.role === 'ADMIN' && <a href="/admin" className="inline-flex h-9 items-center gap-2 rounded-lg border border-gold/30 bg-gold/10 px-3 text-xs font-semibold text-gold hover:bg-gold/20"><Settings size={15}/> Admin</a>}
           <Button size="sm" variant="ghost" onClick={() => void signOut()} aria-label="Sign out"><LogOut size={16}/><span className="hidden sm:inline">Sign out</span></Button>
@@ -288,11 +307,20 @@ export default function HomePage() {
                   <div className="flex items-center justify-center gap-3 py-1 text-xs font-bold uppercase tracking-[.25em] text-muted"><span className="h-px w-10 bg-line"/> VS <span className="h-px w-10 bg-line"/></div>
                   <PlayerBadge name={game.red.username} color="RED" active={game.status === 'ACTIVE' && game.turn === 'RED'} label={`${reds} pieces remaining`} />
                 </div>
-                {game.status === 'FINISHED' && <div className="mt-5 rounded-xl border border-gold/30 bg-gold/10 p-4 text-center"><Trophy className="mx-auto mb-2 text-gold" size={26}/><div className="font-display text-xl">{game.winnerId === user.id ? 'Victory is yours!' : `${winnerName} wins`}</div></div>}
+                {game.status === 'FINISHED' && <div className="mt-5 rounded-xl border border-gold/30 bg-gold/10 p-4 text-center">
+                  <Trophy className="mx-auto mb-2 text-gold" size={26}/>
+                  <div className="font-display text-xl">{game.winnerId === user.id ? 'Victory is yours!' : `${winnerName} wins`}</div>
+                  {game.coinReward?.userId === user.id && <p className="mt-2 flex items-center justify-center gap-1.5 text-sm font-semibold text-gold"><Coins size={16}/> +{game.coinReward.amount} Crown Coins earned</p>}
+                </div>}
                 {game.status === 'WAITING' && game.meColor === null && <Button className="mt-5 w-full" onClick={() => void joinChallenge()} disabled={pending}><Swords size={17}/> Accept challenge</Button>}
                 {game.status === 'WAITING' && game.meColor === 'RED' && <div className="mt-5 space-y-3"><p className="text-sm text-muted">Your table is ready. Send this link to someone you want to play.</p><Button className="w-full" onClick={() => void copyInvite()}>{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Invite link copied' : 'Copy invite link'}</Button></div>}
                 {game.status === 'ACTIVE' && game.meColor && <><div className="mt-5 rounded-lg border border-line bg-ink p-3 text-center text-sm">{yourTurn ? <span className="font-semibold text-gold">● Your turn to move</span> : <span className="text-muted">◌ Waiting for opponent</span>}</div><Button className="mt-3 w-full" variant="danger" size="sm" disabled={pending} onClick={() => void resign()}><Flag size={14}/> Resign match</Button></>}
                 {game.status === 'FINISHED' && <Button className="mt-5 w-full" onClick={() => navigate(null)}>Play another game <ArrowRight size={16}/></Button>}
+              </Card>
+              <Card className="p-5">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Coins size={17} className="text-gold"/> Your Crown Coins</div>
+                <p className="font-display text-3xl text-gold tabular-nums">{wallet?.balance ?? '–'}</p>
+                <p className="mt-2 text-xs leading-5 text-muted">Earn +20 for a normal checkers victory. No rewards for resignations. Free virtual points with no cash value.</p>
               </Card>
               <Card className="p-5">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><CircleHelp size={16} className="text-gold" /> How to play</div>
@@ -328,6 +356,23 @@ export default function HomePage() {
               </div>
             </Card>
           </div>
+          <Card className="mt-6 p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="grid size-12 place-items-center rounded-xl bg-gold/15 text-gold"><Coins size={25}/></span>
+                <div>
+                  <p className="eyebrow mb-1">YOUR CROWN COINS</p>
+                  <p className="font-display text-3xl text-gold tabular-nums">{wallet?.balance ?? '–'} <span className="text-base text-muted">coins</span></p>
+                </div>
+              </div>
+              <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold">+20 per gameplay victory</span>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted">Win a complete game to earn coins. Resignations earn nothing. These are free virtual achievement points, not money or betting credits.</p>
+            {Boolean(wallet?.history.length) && <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Latest rewards</p>
+              <div className="flex flex-wrap gap-2">{wallet!.history.slice(0, 5).map((entry) => <button key={entry.id} type="button" onClick={() => navigate(entry.gameId)} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-cream transition-colors hover:border-gold/50" title="Open rewarded match"><Coins size={14} className="text-gold"/> +{entry.amount} <span className="text-muted">{new Date(entry.createdAt).toLocaleDateString()}</span></button>)}</div>
+            </div>}
+          </Card>
           <div className="mt-10">
             <div className="mb-4 flex items-center justify-between"><div><p className="eyebrow mb-1">YOUR JOURNEY</p><h2 className="font-display text-2xl sm:text-3xl">Recent matches</h2></div><span className="rounded-lg border border-line px-3 py-1.5 text-xs text-muted">{recent.length} games</span></div>
             <Card className="overflow-hidden">
@@ -337,6 +382,7 @@ export default function HomePage() {
                   return <button key={item.id} className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-white/[.035]" onClick={() => navigate(item.id)}>
                     <span className="grid size-11 place-items-center rounded-xl bg-[#2a3634] text-gold"><Swords size={18}/></span>
                     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">vs. {other ?? 'Waiting for opponent'}</span><span className="mt-1 block text-xs text-muted">{new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></span>
+                    {item.coinReward?.userId === user.id && <span className="hidden items-center gap-1 text-xs font-semibold text-gold sm:inline-flex"><Coins size={14}/> +{item.coinReward.amount}</span>}
                     <span className={cn('hidden rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide sm:block', item.status === 'ACTIVE' ? 'bg-emerald-900/30 text-emerald-300' : item.status === 'FINISHED' ? 'bg-gold/10 text-gold' : 'bg-white/5 text-muted')}>{item.status === 'FINISHED' ? (item.winnerId === user.id ? 'Won' : 'Lost') : item.status}</span><ChevronRight size={17} className="text-muted"/>
                   </button>;
                 })}</div>}

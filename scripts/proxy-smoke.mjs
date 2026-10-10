@@ -142,6 +142,9 @@ try {
     headers: { Cookie: cookie },
   });
   assert.equal((await finished.json()).status, 'FINISHED');
+  const unpaid = await fetch(base + '/api/coins', { headers: { Cookie: cookie } });
+  assert.equal(unpaid.status, 200);
+  assert.equal((await unpaid.json()).balance, 0, 'Resignation must not reward coins');
 
   const socket = io(base, {
     transports: ['websocket'], reconnection: false, timeout: 12000,

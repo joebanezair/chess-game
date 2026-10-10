@@ -7,6 +7,10 @@ export const API_URL = !configuredApiUrl || legacyLocalUrl ? '/api' : configured
 export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || (API_URL === '/api' ? '' : API_URL);
 
 export type User = { id: string; username: string; email: string; role: 'ADMIN' | 'USER' };
+export type CoinWallet = {
+  balance: number;
+  history: Array<{ id: string; gameId: string; amount: number; createdAt: string }>;
+};
 export type Piece = 'r' | 'R' | 'b' | 'B' | null;
 export type LegalMove = { from: number; to: number; captures: number[] };
 export type Game = {
@@ -21,6 +25,7 @@ export type Game = {
   meColor: 'RED' | 'BLACK' | null;
   legalMoves: LegalMove[];
   version: number;
+  coinReward: { userId: string; amount: number } | null;
   createdAt: string;
 };
 export type GameListItem = {
@@ -31,6 +36,7 @@ export type GameListItem = {
   blackPlayerId: string | null;
   redPlayer: Pick<User, 'id' | 'username'>;
   blackPlayer: Pick<User, 'id' | 'username'> | null;
+  coinReward: { userId: string; amount: number } | null;
   createdAt: string;
 };
 
