@@ -83,7 +83,15 @@ try {
   assert.equal(state.legalMoves.length, 7);
   const aSocket = await connect(a);
   const bSocket = await connect(b);
-  const nextState = event(bSocket, 'game:state');
+  // Wait for the server to authenticate each socket and join the room
+  // before emitting the first move; otherwise CI can race connection setup.
+  const redReady = event(aSocket, 'game:state', 12000);
+  aSocket.emit('game:join', { gameId });
+  await redReady;
+  const blackReady = event(bSocket, 'game:state', 12000);
+  bSocket.emit('game:join', { gameId });
+  await blackReady;
+  const nextState = event(bSocket, 'game:state', 12000);
   const first = state.legalMoves[0];
   aSocket.emit('game:move', { gameId, from: first.from, to: first.to });
   const updated = await nextState;
