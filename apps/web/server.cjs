@@ -7,7 +7,7 @@ const { createProxyServer } = require('http-proxy');
 const port = Number(process.env.PORT || 3000);
 const hostname = '0.0.0.0';
 const apiTarget = process.env.INTERNAL_API_URL || 'http://127.0.0.1:4000';
-const app = next({ dev: true, hostname, port });
+const app = next({ dev: true, hostname, port, dir: __dirname });
 const handle = app.getRequestHandler();
 const proxy = createProxyServer({
   target: apiTarget, ws: true, xfwd: true, changeOrigin: false,
