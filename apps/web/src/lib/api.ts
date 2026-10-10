@@ -35,12 +35,20 @@ export type GameListItem = {
 };
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Fastify rejects an empty POST/PATCH when Content-Type: application/json
+  // is sent without a body. Only advertise JSON for actual JSON payloads.
+  // Headers also preserves caller-provided values without changing FormData types.
+  const headers = new Headers(init.headers);
+  if (typeof init.body === 'string' && init.body.length > 0 && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   let response: Response;
   try {
     response = await fetch(API_URL + path, {
       ...init,
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+      headers,
       cache: 'no-store',
     });
   } catch {
