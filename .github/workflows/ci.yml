@@ -1,0 +1,42 @@
+name: Build and test
+on:
+  push:
+    branches: [main, feat/multiplayer-checkers]
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://crown:crown_dev@localhost:5432/crown?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-only-placeholder-secret-that-is-over-32-chars
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      WEB_ORIGIN: http://localhost:3000
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: crown
+          POSTGRES_PASSWORD: crown_dev
+          POSTGRES_DB: crown
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U crown -d crown"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run db:generate
+      - run: npm test
+      - run: npm run build
+      - run: npm run db:migrate
+      - run: node scripts/smoke.mjs

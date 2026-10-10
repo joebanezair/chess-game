@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GameStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+}
+
+enum PlayerColor {
+  RED
+  BLACK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  redGames     Game[]   @relation("RedPlayer")
+  blackGames   Game[]   @relation("BlackPlayer")
+  moves        Move[]
+}
+
+model Game {
+  id            String       @id @default(cuid())
+  redPlayerId   String
+  blackPlayerId String?
+  redPlayer     User         @relation("RedPlayer", fields: [redPlayerId], references: [id])
+  blackPlayer   User?        @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
+  status        GameStatus   @default(WAITING)
+  turn          PlayerColor  @default(RED)
+  board         Json
+  forcedFrom    Int?
+  winnerId      String?
+  version       Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  moves         Move[]
+
+  @@index([redPlayerId, createdAt])
+  @@index([blackPlayerId, createdAt])
+}
+
+model Move {
+  id         String   @id @default(cuid())
+  gameId     String
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     User     @relation(fields: [playerId], references: [id])
+  ply        Int
+  from       Int
+  to         Int
+  captured   Json
+  promoted   Boolean
+  createdAt  DateTime @default(now())
+
+  @@unique([gameId, ply])
+  @@index([playerId])
+}
