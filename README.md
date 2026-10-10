@@ -94,8 +94,8 @@ Leave that terminal open. It runs the frontend and the multiplayer API together.
 | Service | Local URL |
 | --- | --- |
 | **Play the game (Next.js frontend)** | **http://localhost:3000** |
-| Multiplayer API (NestJS) | http://localhost:4000 |
-| API health check | http://localhost:4000/health |
+| Multiplayer API (internal NestJS) | http://localhost:4000 |
+| API health check (via frontend proxy) | http://localhost:3000/api/health |
 
 Open **http://localhost:3000** in your browser, register an account, and start playing.
 
@@ -126,7 +126,7 @@ Both players can use the same computer for testing. To connect another device, y
 | `JWT_SECRET` error | Generate a secret of at least 32 characters and set it in `apps/api/.env`. |
 | Ports 3000, 4000, 5432, or 6379 are busy | Stop the conflicting program or change the relevant port configuration. |
 | Changes to environment variables are not reflected | Stop and restart `npm run dev`. |
-| Game loads but live moves do not update | Ensure the API is running and `NEXT_PUBLIC_API_URL` in `apps/web/.env.local` points to it. |
+| Game loads but live moves do not update | Confirm the API is running and `/api/health` works; in local development use `/api` and the same-origin `/socket.io` proxy. |
 
 ### Run checks
 
@@ -154,9 +154,39 @@ In the admin panel, search by username/email and choose **Disable** or **Enable*
 
 **Safety:** Admins cannot disable their own accounts or other administrators from this panel. Only trusted server/database operators can grant ADMIN roles using the CLI above. Keep database credentials secret, never expose the promotion command to end users, and review the audit log when investigating abuse. Disabled users' game and user records remain stored for audit/history; they are not deleted.
 
+## GitHub Codespaces / cloud development
+
+**Fix for `Cannot reach the game API on http://localhost:4000`:** The browser might be accessing a forwarded Codespaces URL, while the game code was previously calling `localhost:4000` in *your browser*. That is not the Codespace backend.
+
+The development server now uses a **same-origin proxy**: HTTP routes under `/api/*` and multiplayer WebSockets under `/socket.io/*` are forwarded from the frontend on **port 3000** to the backend on port 4000 *inside the Codespace*. Only forward/open **port 3000**. Cookies, user registration, the admin panel, and live games all use the same browser origin.
+
+From your Codespace terminal (or local dev terminal), run:
+
+```bash
+git pull origin main
+npm install
+test -f apps/api/.env || cp apps/api/.env.example apps/api/.env
+test -f apps/web/.env.local || cp apps/web/.env.example apps/web/.env.local
+docker compose up -d --wait
+npm run db:generate
+npm run db:migrate
+npm run dev
+```
+
+**Windows PowerShell** uses `Test-Path` / `Copy-Item` instead of `test` / `cp`.
+
+Before running, update `JWT_SECRET` in `apps/api/.env` to a strong random secret. If you already copied the old `NEXT_PUBLIC_API_URL=http://localhost:4000` environment variable, the dev frontend will automatically use `/api` instead. You can also replace it explicitly with `NEXT_PUBLIC_API_URL=/api`. **Restart** Next.js after modifying `.env.local`.
+
+Open the forwarded Codespace URL for **port 3000** and append **`/api/health`**, for example:
+`https://YOUR-CODESPACE-3000.app.github.dev/api/health`.
+
+It must return `{"ok":true}`. You should not need to make port 4000 public or expose a separate forwarded API URL.
+
+**Important:** this proxy runs via `npm run dev` (the custom development server). In production, use a real reverse proxy with HTTPS that routes `/api/*` and `/socket.io/*` to the NestJS backend, or configure explicit production API/socket URLs and matching secure cookie and CORS policies.
+
 ## If the API is refusing connections on port 4000
 
-A `net::ERR_CONNECTION_REFUSED` error for `http://localhost:4000/auth/me` or `/auth/register` means the **NestJS backend is not running**. The React DevTools console message is unrelated.
+A `net::ERR_CONNECTION_REFUSED` error can mean the NestJS backend is stopped **or** your browser is using the wrong hostname (e.g., using `localhost` when accessing Codespaces). The React DevTools console message is unrelated. Use the same-origin `/api/health` URL to test the new development proxy.
 
 In separate terminals from the repository root:
 
@@ -171,7 +201,7 @@ npm run dev -w @crown/api
 npm run dev -w @crown/web
 ```
 
-Open `http://localhost:4000/health` and verify it returns `{"ok":true}`. If it does not, check the backend terminal's exact startup error, and confirm `apps/api/.env` exists and `JWT_SECRET` is at least 32 characters.
+Open `http://localhost:3000/api/health` and verify it returns `{"ok":true}`. If it does not, check the backend terminal's exact startup error, and confirm `apps/api/.env` exists and `JWT_SECRET` is at least 32 characters.
 
 ## Project structure
 

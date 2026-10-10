@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { API_URL, api, type Game, type GameListItem, type User } from '@/lib/api';
+import { SOCKET_URL, api, type Game, type GameListItem, type User } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 function PlayerBadge({ name, color, active, label }: {
@@ -97,6 +97,7 @@ export default function HomePage() {
   const [game, setGame] = useState<Game | null>(null);
   const [recent, setRecent] = useState<GameListItem[]>([]);
   const [queued, setQueued] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState('');
@@ -116,7 +117,7 @@ export default function HomePage() {
     const onPop = () => navigate(new URLSearchParams(window.location.search).get('game'), false);
     window.addEventListener('popstate', onPop);
     api<{ user: User }>('/auth/me').then((response) => setUser(response.user)).catch((err: Error) => {
-      if (err.message.startsWith('Cannot reach')) setApiUnavailable(true);
+      if (err.message.startsWith('Cannot reach') || err.message.includes('game API is offline')) setApiUnavailable(true);
     }).finally(() => setChecking(false));
     return () => window.removeEventListener('popstate', onPop);
   }, [navigate]);
@@ -124,8 +125,10 @@ export default function HomePage() {
   useEffect(() => {
     if (!user) return;
     void refreshRecent();
-    const conn = io(API_URL, { transports: ['websocket'], withCredentials: true, reconnection: true });
+    const conn = io(SOCKET_URL || undefined, { transports: ['websocket'], withCredentials: true, reconnection: true });
     setSocket(conn);
+    conn.on('session:ready', () => setSocketReady(true));
+    conn.on('disconnect', () => setSocketReady(false));
     conn.on('queue:waiting', () => setQueued(true));
     conn.on('queue:left', () => setQueued(false));
     conn.on('queue:matched', ({ gameId: id }: { gameId: string }) => {
@@ -142,7 +145,7 @@ export default function HomePage() {
     });
     conn.on('connect_error', () => setNotice('Unable to connect to live matches. Is the game server running?'));
     const pulse = window.setInterval(() => { if (conn.connected) conn.emit('presence:ping'); }, 20000);
-    return () => { window.clearInterval(pulse); conn.disconnect(); setSocket(null); };
+    return () => { window.clearInterval(pulse); conn.disconnect(); setSocket(null); setSocketReady(false); };
   }, [user?.id, navigate, refreshRecent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -184,7 +187,7 @@ export default function HomePage() {
     finally { setPending(false); }
   }
   function queueUp() {
-    if (!socket?.connected) { setNotice('Connecting to multiplayer server. Please try again shortly.'); return; }
+    if (!socket?.connected || !socketReady) { setNotice('Connecting to multiplayer server. Please try again shortly.'); return; }
     setQueued(true); setNotice(''); socket.emit('queue:join');
   }
   function cancelQueue() { socket?.emit('queue:leave'); setQueued(false); }
@@ -236,7 +239,7 @@ export default function HomePage() {
       {checking ? <div className="flex min-h-[60vh] items-center justify-center gap-3 text-muted"><LoaderCircle className="animate-spin text-gold" /> Loading the club...</div>
       : !user ? <>
           {apiUnavailable && <div role="alert" className="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/40 p-4 text-sm text-amber-200">
-            Backend unavailable. Start Docker and run <code>npm run dev -w @crown/api</code> in another terminal, then refresh.
+            Game API is offline. Check <a className="underline" href="/api/health" target="_blank" rel="noreferrer">/api/health</a>. Start Docker and run <code>npm run dev -w @crown/api</code> in another terminal, then refresh.
           </div>}
           {notice && <div role="alert" className="mb-4 rounded-xl border border-red-800/50 bg-red-950/30 p-4 text-sm text-red-300">{notice}</div>}
           <LoginPanel onAuth={(next) => { setUser(next); setNotice(''); setApiUnavailable(false); }}/>

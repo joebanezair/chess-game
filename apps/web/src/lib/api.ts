@@ -1,4 +1,10 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+// Use same-origin reverse proxy in development, even if an older .env.local
+// still contains the legacy localhost:4000 value. This works in Codespaces,
+const apiUrlSetting = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
+const configuredApiUrl = apiUrlSetting.endsWith('/') ? apiUrlSetting.slice(0, -1) : apiUrlSetting;
+const legacyLocalUrl = configuredApiUrl === 'http://localhost:4000' || configuredApiUrl === 'http://127.0.0.1:4000';
+export const API_URL = !configuredApiUrl || legacyLocalUrl ? '/api' : configuredApiUrl;
+export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || (API_URL === '/api' ? '' : API_URL);
 
 export type User = { id: string; username: string; email: string; role: 'ADMIN' | 'USER' };
 export type Piece = 'r' | 'R' | 'b' | 'B' | null;
@@ -38,7 +44,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       cache: 'no-store',
     });
   } catch {
-    throw new Error('Cannot reach the game API on ' + API_URL + '. Check Docker and start the backend with npm run dev -w @crown/api.');
+    throw new Error('Cannot reach the game API. Start the backend with npm run dev -w @crown/api and check /api/health.');
   }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {

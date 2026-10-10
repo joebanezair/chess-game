@@ -43,9 +43,10 @@ async function connect(session) {
   const socket = io(base, { transports: ['websocket'], reconnection: false, extraHeaders: { Cookie: session.cookie } });
   sockets.push(socket);
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('WebSocket connect timed out')), 8000);
-    socket.once('connect', () => { clearTimeout(timer); resolve(); });
+    const timer = setTimeout(() => reject(new Error('WebSocket session-ready timed out')), 12000);
+    socket.once('session:ready', () => { clearTimeout(timer); resolve(); });
     socket.once('connect_error', (error) => { clearTimeout(timer); reject(error); });
+    socket.once('disconnect', (reason) => { clearTimeout(timer); reject(new Error('Disconnected before auth: ' + reason)); });
   });
   return socket;
 }
@@ -83,7 +84,15 @@ try {
   assert.equal(state.legalMoves.length, 7);
   const aSocket = await connect(a);
   const bSocket = await connect(b);
-  const nextState = event(bSocket, 'game:state');
+  // Wait for the server to authenticate each socket and join the room
+  // before emitting the first move; otherwise CI can race connection setup.
+  const redReady = event(aSocket, 'game:state', 12000);
+  aSocket.emit('game:join', { gameId });
+  await redReady;
+  const blackReady = event(bSocket, 'game:state', 12000);
+  bSocket.emit('game:join', { gameId });
+  await blackReady;
+  const nextState = event(bSocket, 'game:state', 12000);
   const first = state.legalMoves[0];
   aSocket.emit('game:move', { gameId, from: first.from, to: first.to });
   const updated = await nextState;
