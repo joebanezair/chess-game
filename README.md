@@ -135,6 +135,51 @@ npm test       # Checkers rules tests
 npm run build  # Build the API and frontend
 ```
 
+## Reset the development database
+
+> **Warning — destructive commands:** Only use these steps for your **local development/test database**. They delete registered users, passwords, saved games, moves, admin roles, and the admin audit log. Back up any data you need beforehand. Stop the running application with **Ctrl+C** first.
+
+### Option A: Reset only PostgreSQL using Prisma
+
+This clears and recreates the database schema using the committed Prisma migrations; Docker volumes and Redis are preserved.
+
+**Windows PowerShell, macOS, Linux, or Codespaces** (from the repository root):
+
+```bash
+docker compose up -d --wait
+cd apps/api
+npx prisma migrate reset --force
+cd ../..
+npm run dev
+```
+
+`prisma migrate reset --force` reapplies all migrations and runs configured seed scripts, if any. There is currently no configured seed script. Existing Redis matchmaking and presence data are **not** cleared by this option; if that causes stale matches, you can stop and restart the Redis container or use the complete reset below.
+
+### Option B: Completely erase PostgreSQL **and Redis** volumes
+
+Use this only if you want a **full clean slate**. Docker Compose removes its project volumes with `-v`, permanently deleting local game data and Redis data.
+
+**Windows PowerShell, macOS, Linux, or Codespaces** (from the repository root):
+
+```bash
+# Stop the application (Ctrl+C) first
+docker compose down -v
+docker compose up -d --wait
+npm run db:generate
+npm run db:migrate
+npm run dev
+```
+
+### Restore an admin after either reset
+
+Once the app is running, register your account again at `http://localhost:3000` (or your forwarded Codespaces port 3000 URL). From a **second terminal in the repository root**, run:
+
+```bash
+npm run admin:promote -- your_username_or_email
+```
+
+Sign out and back in to refresh your role, then open `/admin`. The reset deletes **all previous admin assignments**, so promotion must be repeated.
+
 ## Administrator setup and account disabling
 
 Regular registration creates only **USER** accounts. There is **no public admin-registration endpoint** or default administrator password.
@@ -249,12 +294,113 @@ Redis coordinates matchmaking and broadcasts Socket.IO events between API instan
 
 Keep wallet/ledger, financial settlement, and bet placement **out of the game engine**. Do not take real-money wagers without jurisdiction-specific legal advice, licensing, age/identity verification, AML controls, responsible-gaming protections, and a double-entry ledger with idempotent settlement. This initial application does **not** include those features.
 
-## Commands
+## Complete command reference
+
+Run these from the **`chess-game` project root**, unless a section explicitly says otherwise. **Do not paste every command at once**: pick the task you need.
+
+### Git and dependencies
 
 ```bash
+# First-time clone
+git clone https://github.com/joebanezair/chess-game.git
+cd chess-game
+npm install
+
+# Existing clone: update to the latest main branch
+git checkout main
+git pull origin main
+npm install
+```
+
+### Create environment files (first-time setup)
+
+**Windows PowerShell:**
+
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
+Copy-Item apps/web/.env.example apps/web/.env.local
+```
+
+**macOS / Linux / Git Bash / Codespaces:**
+
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env.local
+```
+
+**Generate your own strong JWT secret** and put its value in `apps/api/.env` under `JWT_SECRET`:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
+```
+
+Do not commit your actual secrets. If the env files already exist, **do not overwrite them** just to rerun the game.
+
+### Docker and database
+
+| Command | Purpose | Deletes saved data? |
+| --- | --- | --- |
+| `docker compose up -d --wait` | Start PostgreSQL and Redis, waiting for healthy containers | No |
+| `docker compose ps` | Check running containers | No |
+| `docker compose logs postgres` | Inspect PostgreSQL errors | No |
+| `docker compose logs redis` | Inspect Redis errors | No |
+| `docker compose down` | Stop containers while preserving data volumes | No |
+| `docker compose down -v` | **Delete** local PostgreSQL and Redis Docker volumes | **Yes** |
+| `npm run db:generate` | Regenerate the Prisma client | No |
+| `npm run db:migrate` | Apply existing database migrations | No (migrations can modify schema/data) |
+
+To reset **only the database**, follow [Option A](#option-a-reset-only-postgresql-using-prisma). For a complete destructive reset of **both PostgreSQL and Redis**, follow [Option B](#option-b-completely-erase-postgresql-and-redis-volumes).
+
+### Run servers
+
+```bash
+# Start both API and frontend (recommended)
 npm run dev
-npm test
-npm run build
+
+# Or run each in a separate terminal:
+npm run dev -w @crown/api
+npm run dev -w @crown/web
+
+# Stop the current development server: Ctrl+C
+```
+
+The app runs at `http://localhost:3000` (port 3000 forwarded URL in Codespaces); the internal API runs on port 4000. **Use the frontend's `/api/health`** URL to check connectivity:
+
+```text
+http://localhost:3000/api/health
+```
+
+Expected response: `{"ok":true}`. In Codespaces, append `/api/health` to your forwarded **port 3000** URL rather than visiting `localhost:4000` from the browser. See [Codespaces instructions](#github-codespaces--cloud-development) if you get connection errors.
+
+### Tests, build, and server
+
+```bash
+npm test                # Checkers rules unit tests
+npm run build           # Prisma generation + API/frontend production builds
+npm run db:generate     # Recreate generated Prisma client
+npm run db:migrate      # Apply pending database migrations
+```
+
+### Admin controls
+
+```bash
+# Promote an account that already registered; run only as a trusted server operator
+npm run admin:promote -- your_username_or_email
+```
+
+Open `http://localhost:3000/admin` after signing out and signing back in. Do not expose the admin promotion command or database credentials to users.
+
+### Quick start after pulling changes
+
+If the environment is already configured, you can usually start everything with:
+
+```bash
+git pull origin main
+npm install
+docker compose up -d --wait
 npm run db:generate
 npm run db:migrate
+npm run dev
 ```
+
+If you are on Windows PowerShell and prefer step-by-step instructions, follow [How to run locally](#how-to-run-locally). Database reset commands are **not** part of everyday startup.
