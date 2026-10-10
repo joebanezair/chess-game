@@ -5,6 +5,7 @@ import {
 import { AuthGuard, type AuthRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { AdminService } from './admin.service';
+import { GameGateway } from '../games/game.gateway';
 
 @Injectable()
 export class AdminRoleGuard implements CanActivate {
@@ -26,7 +27,7 @@ export class AdminRoleGuard implements CanActivate {
 @UseGuards(AuthGuard, AdminRoleGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private admin: AdminService, private auth: AuthService) {}
+  constructor(private admin: AdminService, private games: GameGateway) {}
 
   @Get('users')
   async users(@Query() query: Record<string, unknown>) {
@@ -35,6 +36,8 @@ export class AdminController {
 
   @Patch('users/:id/status')
   async status(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthRequest) {
-    return { user: await this.admin.setStatus(request.userId, id, body) };
+    const user = await this.admin.setStatus(request.userId, id, body);
+    if (user.disabledAt) await this.games.disconnectAccount(id);
+    return { user };
   }
 }
